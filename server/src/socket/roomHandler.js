@@ -49,11 +49,18 @@ function assignColor(roomId) {
 
 /**
  * Get all users currently in a room as a plain array.
+ * Deduplicates by userId to prevent "ghost" users when clients reconnect
+ * and old sockets haven't timed out yet.
  */
 function getRoomUsers(roomId) {
   const roomUsers = presence.get(roomId);
   if (!roomUsers) return [];
-  return Array.from(roomUsers.values());
+  
+  const uniqueUsers = new Map();
+  for (const userInfo of roomUsers.values()) {
+    uniqueUsers.set(userInfo.userId, userInfo);
+  }
+  return Array.from(uniqueUsers.values());
 }
 
 /**
