@@ -99,7 +99,13 @@ export default function Toolbar({
         {/* Language selector */}
         <select
           value={language}
-          onChange={e => onLanguage?.(e.target.value)}
+          onChange={e => {
+            const newLang = e.target.value;
+            const langLabel = LANGUAGES.find(l => l.value === newLang)?.label || newLang;
+            if (window.confirm(`Switching to ${langLabel} will reset the editor to the default template. Are you sure you want to discard your current code?`)) {
+              onLanguage?.(newLang);
+            }
+          }}
           style={styles.select}
           title="Select language"
         >
