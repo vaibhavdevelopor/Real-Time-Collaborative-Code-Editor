@@ -59,6 +59,7 @@ export default function Editor({
   externalOp,
   onExternalApplied,
   initialDoc        = '',
+  resetSignal       = 0,
   onValueChange,
 }) {
   const editorRef  = useRef(null);  // Monaco editor instance
@@ -69,7 +70,6 @@ export default function Editor({
   // Stable refs for callbacks used inside effects with empty deps
   const onValueChangeRef = useRef(onValueChange);
   onValueChangeRef.current = onValueChange;
-  const prevLanguageRef = useRef(language);
 
   // ----------------------------------------------------------------
   // Mount Monaco editor
@@ -120,22 +120,20 @@ export default function Editor({
   }, [initialDoc]);
 
   // ----------------------------------------------------------------
-  // Load starter code when language changes
+  // Load starter code when language changes manually
   // ----------------------------------------------------------------
 
   useEffect(() => {
+    if (resetSignal === 0) return; // skip initial mount
     const editor = editorRef.current;
     if (!editor) return;
-    // Skip initial mount -- handleEditorDidMount handles that
-    if (prevLanguageRef.current === language) return;
-    prevLanguageRef.current = language;
 
     const newCode = STARTER_CODE[language] || '';
     isApplying.current = true;
     editor.setValue(newCode);
     isApplying.current = false;
     onValueChangeRef.current?.(newCode);
-  }, [language]);
+  }, [resetSignal]); // only trigger when resetSignal changes
 
   // ----------------------------------------------------------------
   // Handle local user typing

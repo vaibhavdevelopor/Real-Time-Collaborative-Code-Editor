@@ -140,8 +140,11 @@ export default function Room() {
     setMessages(prev => [...prev, message]);
   }, []);
 
+  const [resetSignal, setResetSignal] = useState(0);
+
   const onLanguageChange = useCallback((lang) => {
     setLanguage(lang);
+    setResetSignal(c => c + 1);
   }, []);
 
   const onError = useCallback((message) => {
@@ -177,6 +180,7 @@ export default function Room() {
   // ── Handle language change ────────────────────────────────────
   const handleLanguageChange = useCallback((lang) => {
     setLanguage(lang);
+    setResetSignal(c => c + 1);
     emitLanguage(lang);
   }, [emitLanguage]);
 
@@ -286,6 +290,7 @@ export default function Room() {
             externalOp={externalOp}
             onExternalApplied={handleExternalApplied}
             initialDoc={initialDoc}
+            resetSignal={resetSignal}
             onValueChange={(val) => { editorValueRef.current = val; }}
           />
         </div>
