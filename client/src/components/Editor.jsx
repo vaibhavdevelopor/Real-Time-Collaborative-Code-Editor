@@ -120,22 +120,9 @@ export default function Editor({
   }, [initialDoc]);
 
   // ----------------------------------------------------------------
-  // Load starter code when language changes
+  // Removed: Auto-loading starter code on language change
+  // We no longer wipe the user's code when they switch languages.
   // ----------------------------------------------------------------
-
-  useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    // Skip initial mount -- handleEditorDidMount handles that
-    if (prevLanguageRef.current === language) return;
-    prevLanguageRef.current = language;
-
-    const newCode = STARTER_CODE[language] || '';
-    isApplying.current = true;
-    editor.setValue(newCode);
-    isApplying.current = false;
-    onValueChangeRef.current?.(newCode);
-  }, [language]);
 
   // ----------------------------------------------------------------
   // Handle local user typing
