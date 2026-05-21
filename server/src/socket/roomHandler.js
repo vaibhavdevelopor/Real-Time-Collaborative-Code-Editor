@@ -110,10 +110,12 @@ module.exports = function roomHandler(io, socket, redisClient) {
 
       roomUsers.set(socket.id, { userId, username, color, socketId: socket.id });
 
-      const [doc, language] = await Promise.all([
-        redisClient.get(`room:${roomId}:doc`),
-        redisClient.get(`room:${roomId}:language`),
-      ]);
+      const { getRoomDoc } = require('./editorHandler');
+      let doc = getRoomDoc(roomId);
+      if (doc === undefined) {
+        doc = (await redisClient.get(`room:${roomId}:doc`)) || '';
+      }
+      const language = await redisClient.get(`room:${roomId}:language`);
 
       // Send current state only to the joining socket
       socket.emit('init-document', {

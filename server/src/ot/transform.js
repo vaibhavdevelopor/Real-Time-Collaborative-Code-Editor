@@ -39,13 +39,13 @@ function transform(op1, op2) {
   // ── Case 1: both inserts ──────────────────────────────────────
   if (op1.type === 'insert' && op2.type === 'insert') {
     if (op2.position < op1.position) {
-      return { ...op1, position: clampMin(op1.position + 1) };
+      return { ...op1, position: clampMin(op1.position + op2.char.length) };
     }
 
     if (op2.position === op1.position) {
       // Stable tiebreaker — never depends on raw userId being present
       if (tiebreakerOf(op2) > tiebreakerOf(op1)) {
-        return { ...op1, position: clampMin(op1.position + 1) };
+        return { ...op1, position: clampMin(op1.position + op2.char.length) };
       }
       return op1;
     }
@@ -64,7 +64,7 @@ function transform(op1, op2) {
   // ── Case 3: delete then insert ───────────────────────────────
   if (op1.type === 'delete' && op2.type === 'insert') {
     if (op2.position <= op1.position) {
-      return { ...op1, position: clampMin(op1.position + 1) };
+      return { ...op1, position: clampMin(op1.position + op2.char.length) };
     }
     return op1;
   }

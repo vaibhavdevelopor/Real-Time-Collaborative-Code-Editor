@@ -39,6 +39,12 @@ const opLogs = new Map();
 // Map<roomId, number>
 const revisions = new Map();
 
+// Map<roomId, string> -- in-memory document cache
+const roomDocs = new Map();
+
+// Map<roomId, NodeJS.Timeout> -- debounce timers
+const saveTimers = new Map();
+
 /**
  * Per-room async queue.
  * Ensures code-change ops for the same room are processed one at a time,
@@ -130,14 +136,27 @@ module.exports = function editorHandler(io, socket, redisClient) {
       const revision = nextRevision(roomId);
 
       if (transformed) {
-        // 3. Fetch current doc and apply
-        const currentDoc = (await redisClient.get(`room:${roomId}:doc`)) || '';
+        // 3. Fetch current doc (from memory or Redis) and apply
+        if (!roomDocs.has(roomId)) {
+          const fetched = (await redisClient.get(`room:${roomId}:doc`)) || '';
+          roomDocs.set(roomId, fetched);
+        }
+        const currentDoc = roomDocs.get(roomId);
         const newDoc     = applyOperation(currentDoc, transformed);
-
+        
+        roomDocs.set(roomId, newDoc);
         const serverOp = { ...transformed, revision, userId: operation.userId };
 
-        // 4. Persist updated doc
-        await redisClient.set(`room:${roomId}:doc`, newDoc);
+        // 4. Debounce Redis persistence to avoid Upstash rate limits
+        if (!saveTimers.has(roomId)) {
+          saveTimers.set(roomId, setTimeout(() => {
+            const docToSave = roomDocs.get(roomId);
+            redisClient.set(`room:${roomId}:doc`, docToSave).catch(err => {
+              console.error('[Redis] Failed to debounced save doc:', err);
+            });
+            saveTimers.delete(roomId);
+          }, 1000));
+        }
 
         // 5. Append to log
         appendToLog(roomId, serverOp);
@@ -181,10 +200,12 @@ module.exports = function editorHandler(io, socket, redisClient) {
     if (!isInRoom(socket, roomId)) return;
 
     try {
-      const [doc, language] = await Promise.all([
-        redisClient.get(`room:${roomId}:doc`),
-        redisClient.get(`room:${roomId}:language`),
-      ]);
+      if (!roomDocs.has(roomId)) {
+        const fetchedDoc = (await redisClient.get(`room:${roomId}:doc`)) || '';
+        roomDocs.set(roomId, fetchedDoc);
+      }
+      const doc = roomDocs.get(roomId);
+      const language = await redisClient.get(`room:${roomId}:language`);
 
       socket.emit('init-document', {
         doc:      doc      || '',
@@ -221,4 +242,8 @@ module.exports = function editorHandler(io, socket, redisClient) {
     }
   });
 
+};
+
+module.exports.getRoomDoc = function(roomId) {
+  return roomDocs.get(roomId);
 };

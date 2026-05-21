@@ -158,12 +158,12 @@ export default function Editor({
         emitChange?.(op, clientRevision);
       }
 
-      // Emit insert ops for each new character typed
-      for (let i = 0; i < text.length; i++) {
+      // Emit insert op for the pasted/typed text chunk
+      if (text.length > 0) {
         const op = {
           type:     'insert',
-          position: rangeOffset + i,
-          char:     text[i],
+          position: rangeOffset,
+          char:     text,
           userId:   socketId,
         };
         const clientRevision = handleLocalOp(op);
