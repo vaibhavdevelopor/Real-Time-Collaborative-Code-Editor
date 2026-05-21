@@ -213,6 +213,10 @@ export default function Editor({
           forceMoveMarkers: true,
         }]);
       }
+
+      // Sync the Room.jsx reference so the Run button executes the latest code
+      onValueChangeRef.current?.(model.getValue());
+
     } catch (err) {
       console.error('[Editor] applyOpToEditor error:', err);
     } finally {
