@@ -56,7 +56,8 @@ export default function Editor({
   handleLocalOp,
   handleRemoteOp,
   handleOpAck,
-  externalOp,
+  externalOpQueue,
+  opTick,
   onExternalApplied,
   initialDoc        = '',
   resetSignal       = 0,
@@ -227,21 +228,28 @@ export default function Editor({
   // ----------------------------------------------------------------
 
   useEffect(() => {
-    if (!externalOp) return;
+    if (!externalOpQueue?.current) return;
 
-    const { operation, revision, fromSocket } = externalOp;
+    // Drain ALL queued ops in one synchronous pass
+    const queue = externalOpQueue.current;
+    if (queue.length === 0) return;
 
-    if (fromSocket === socketId) {
-      // Own op confirmed by server -- ack only, do NOT re-apply
-      handleOpAck(revision);
-    } else {
-      // Remote op from another user -- transform then apply
-      const transformed = handleRemoteOp(operation, revision);
-      if (transformed) applyOpToEditor(transformed);
+    // Take a snapshot and clear the queue immediately
+    const ops = queue.splice(0, queue.length);
+
+    for (const { operation, revision, fromSocket } of ops) {
+      if (fromSocket === socketId) {
+        // Own op confirmed by server -- ack only, do NOT re-apply
+        handleOpAck(revision);
+      } else {
+        // Remote op from another user -- transform then apply
+        const transformed = handleRemoteOp(operation, revision);
+        if (transformed) applyOpToEditor(transformed);
+      }
     }
 
     onExternalApplied?.();
-  }, [externalOp, socketId, handleOpAck, handleRemoteOp, applyOpToEditor, onExternalApplied]);
+  }, [opTick, socketId, handleOpAck, handleRemoteOp, applyOpToEditor, onExternalApplied]);
 
   // ----------------------------------------------------------------
   // Render

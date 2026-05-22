@@ -63,10 +63,11 @@ export default function Room() {
   const [users,       setUsers]       = useState([]);
   const [messages,    setMessages]    = useState([]);
   const [initialDoc,  setInitialDoc]  = useState('');
-  const [externalOp,  setExternalOp]  = useState(null);
+  const externalOpQueue = useRef([]);
   const [output,      setOutput]      = useState(null);
   const [running,     setRunning]     = useState(false);
   const [showOutput,  setShowOutput]  = useState(false);
+  const [opTick,      setOpTick]      = useState(0);
   const [error,       setError]       = useState(null);
 
   // Ref to get current editor value for Run
@@ -104,9 +105,10 @@ export default function Room() {
   }, [resetRevision]);
 
   const onCodeChange = useCallback((operation, revision, fromSocket) => {
-    // Pass to Editor via externalOp state
-    // Editor decides: own op -> ack only, remote op -> transform + apply
-    setExternalOp({ operation, revision, fromSocket });
+    // Push to queue -- never overwrites, so fast ops are never lost
+    externalOpQueue.current.push({ operation, revision, fromSocket });
+    // Force a re-render so Editor.jsx useEffect fires to drain the queue
+    setOpTick(t => t + 1);
   }, []);
 
   const onOpAck = useCallback((revision) => {
@@ -231,9 +233,8 @@ export default function Room() {
   }, [emitSave, language]);
 
   // ── Clear externalOp after Editor handles it ──────────────────
-  const handleExternalApplied = useCallback(() => {
-    setExternalOp(null);
-  }, []);
+  // (no-op now -- Editor drains the queue directly)
+  const handleExternalApplied = useCallback(() => {}, []);
 
   // Cleanup error timer on unmount
   useEffect(() => {
@@ -298,7 +299,8 @@ export default function Room() {
                     handleLocalOp={handleLocalOp}
                     handleRemoteOp={handleRemoteOp}
                     handleOpAck={handleOpAck}
-                    externalOp={externalOp}
+                    externalOpQueue={externalOpQueue}
+                    opTick={opTick}
                     onExternalApplied={handleExternalApplied}
                     initialDoc={initialDoc}
                     resetSignal={resetSignal}
