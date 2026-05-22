@@ -32,7 +32,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useParams, useNavigate }                   from 'react-router-dom';
-import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels';
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels';
 
 import { useSocket }  from '../hooks/useSocket';
 import { useOT }      from '../hooks/useOT';
@@ -284,9 +284,9 @@ export default function Room() {
 
       {/* Main area */}
       <div style={styles.main}>
-        <PanelGroup direction="vertical">
+        <PanelGroup orientation="vertical">
           <Panel defaultSize={showOutput ? 70 : 100} minSize={20}>
-            <PanelGroup direction="horizontal">
+            <PanelGroup orientation="horizontal">
               <Panel defaultSize={75} minSize={30}>
                 <div style={styles.editorPane}>
                   <Editor
