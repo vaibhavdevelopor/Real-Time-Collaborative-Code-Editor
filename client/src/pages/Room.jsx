@@ -32,6 +32,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useParams, useNavigate }                   from 'react-router-dom';
+import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels';
 
 import { useSocket }  from '../hooks/useSocket';
 import { useOT }      from '../hooks/useOT';
@@ -253,7 +254,15 @@ export default function Room() {
   // ── Render ────────────────────────────────────────────────────
   return (
     <div style={styles.page}>
-
+      <style>{`
+        .resize-handle-vertical:hover, .resize-handle-vertical[data-resize-handle-state="drag"] {
+          background: rgba(99, 102, 241, 0.5) !important;
+        }
+        .resize-handle-horizontal:hover, .resize-handle-horizontal[data-resize-handle-state="drag"] {
+          background: rgba(99, 102, 241, 0.5) !important;
+        }
+      `}</style>
+      
       {/* Error toast */}
       {error && (
         <div style={styles.errorToast}>
@@ -275,47 +284,60 @@ export default function Room() {
 
       {/* Main area */}
       <div style={styles.main}>
+        <PanelGroup direction="vertical">
+          <Panel defaultSize={showOutput ? 70 : 100} minSize={20}>
+            <PanelGroup direction="horizontal">
+              <Panel defaultSize={75} minSize={30}>
+                <div style={styles.editorPane}>
+                  <Editor
+                    language={language}
+                    socketId={socketId}
+                    remoteCursors={remoteCursorsRef.current}
+                    emitChange={emitChange}
+                    emitCursor={emitCursor}
+                    handleLocalOp={handleLocalOp}
+                    handleRemoteOp={handleRemoteOp}
+                    handleOpAck={handleOpAck}
+                    externalOp={externalOp}
+                    onExternalApplied={handleExternalApplied}
+                    initialDoc={initialDoc}
+                    resetSignal={resetSignal}
+                    onValueChange={(val) => { editorValueRef.current = val; }}
+                  />
+                </div>
+              </Panel>
+              
+              <PanelResizeHandle className="resize-handle-vertical" style={styles.resizeHandleVertical} />
+              
+              <Panel defaultSize={25} minSize={15}>
+                <div style={styles.chatPane}>
+                  <Chat
+                    messages={messages}
+                    onSend={emitChat}
+                    currentUserId={userId}
+                    users={users}
+                  />
+                </div>
+              </Panel>
+            </PanelGroup>
+          </Panel>
 
-        {/* Editor */}
-        <div style={styles.editorPane}>
-          <Editor
-            language={language}
-            socketId={socketId}
-            remoteCursors={remoteCursorsRef.current}
-            emitChange={emitChange}
-            emitCursor={emitCursor}
-            handleLocalOp={handleLocalOp}
-            handleRemoteOp={handleRemoteOp}
-            handleOpAck={handleOpAck}
-            externalOp={externalOp}
-            onExternalApplied={handleExternalApplied}
-            initialDoc={initialDoc}
-            resetSignal={resetSignal}
-            onValueChange={(val) => { editorValueRef.current = val; }}
-          />
-        </div>
-
-        {/* Chat sidebar */}
-        <div style={styles.chatPane}>
-          <Chat
-            messages={messages}
-            onSend={emitChat}
-            currentUserId={userId}
-            users={users}
-          />
-        </div>
+          {showOutput && (
+            <>
+              <PanelResizeHandle className="resize-handle-horizontal" style={styles.resizeHandleHorizontal} />
+              <Panel defaultSize={30} minSize={10}>
+                <div style={styles.outputPane}>
+                  <Output
+                    result={output}
+                    running={running}
+                    onClose={() => setShowOutput(false)}
+                  />
+                </div>
+              </Panel>
+            </>
+          )}
+        </PanelGroup>
       </div>
-
-      {/* Output panel */}
-      {showOutput && (
-        <div style={styles.outputPane}>
-          <Output
-            result={output}
-            running={running}
-            onClose={() => setShowOutput(false)}
-          />
-        </div>
-      )}
     </div>
   );
 }
@@ -338,19 +360,31 @@ const styles = {
     overflow: 'hidden',
   },
   editorPane: {
-    flex:     1,
-    overflow: 'hidden',
+    width:    '100%',
+    height:   '100%',
     position: 'relative',
   },
   chatPane: {
-    width:     '280px',
-    flexShrink:0,
+    width:     '100%',
+    height:    '100%',
     overflow:  'hidden',
   },
   outputPane: {
-    height:    '220px',
-    flexShrink:0,
-    borderTop: '1px solid #1E293B',
+    width:     '100%',
+    height:    '100%',
+    overflow:  'hidden',
+  },
+  resizeHandleVertical: {
+    width:      '4px',
+    cursor:     'col-resize',
+    background: 'rgba(255, 255, 255, 0.05)',
+    transition: 'background 0.2s',
+  },
+  resizeHandleHorizontal: {
+    height:     '4px',
+    cursor:     'row-resize',
+    background: 'rgba(255, 255, 255, 0.05)',
+    transition: 'background 0.2s',
   },
   errorToast: {
     position:     'fixed',
