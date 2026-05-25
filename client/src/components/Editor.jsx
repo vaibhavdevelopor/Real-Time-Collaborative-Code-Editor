@@ -37,7 +37,7 @@ import { useRef, useEffect, useCallback } from 'react';
 import MonacoEditor from '@monaco-editor/react';
 import UserCursors from './UserCursors';
 
-const STARTER_CODE = {
+export const STARTER_CODE = {
   javascript: '// Start coding together!\nconsole.log("Hello, World!");\n',
   typescript: '// Start coding together!\nconst greet = (name: string): string => `Hello, ${name}!`;\nconsole.log(greet("World"));\n',
   python:     '# Start coding together!\nprint("Hello, World!")\n',
@@ -60,13 +60,16 @@ export default function Editor({
   opTick,
   onExternalApplied,
   initialDoc        = '',
+  documentRevision  = 0,
   resetSignal       = 0,
+  canEdit           = true,
   onValueChange,
 }) {
   const editorRef  = useRef(null);  // Monaco editor instance
   const modelRef   = useRef(null);  // Monaco model instance
   const monacoRef  = useRef(null);  // Monaco API object (from onMount) -- NOT window.monaco
   const isApplying = useRef(false); // guard: true while applying a remote op
+  const appliedDocumentRevision = useRef(null);
 
   // Stable refs for callbacks used inside effects with empty deps
   const onValueChangeRef = useRef(onValueChange);
@@ -86,6 +89,7 @@ export default function Editor({
     isApplying.current = true;
     editor.setValue(startContent);
     isApplying.current = false;
+    appliedDocumentRevision.current = documentRevision;
 
     // Sync editorValueRef in Room.jsx so Run button has the content
     onValueChangeRef.current?.(startContent);
@@ -108,7 +112,8 @@ export default function Editor({
 
   useEffect(() => {
     const editor = editorRef.current;
-    if (!editor || !initialDoc) return;
+    if (!editor) return;
+    if (appliedDocumentRevision.current === documentRevision) return;
 
     const current = editor.getValue();
     if (current !== initialDoc) {
@@ -118,7 +123,8 @@ export default function Editor({
       // Sync editorValueRef in Room.jsx
       onValueChangeRef.current?.(initialDoc);
     }
-  }, [initialDoc]);
+    appliedDocumentRevision.current = documentRevision;
+  }, [initialDoc, documentRevision]);
 
   // ----------------------------------------------------------------
   // Load starter code when language changes manually
@@ -142,6 +148,7 @@ export default function Editor({
 
   const handleChange = useCallback((newValue, changeEvent) => {
     if (isApplying.current) return; // skip programmatic edits
+    if (!canEdit) return;
     if (!changeEvent?.changes) return;
 
     // Update Room.jsx's editorValueRef so Run button has current code
@@ -169,7 +176,7 @@ export default function Editor({
         emitChange?.(op, clientRevision);
       }
     }
-  }, [socketId, handleLocalOp, emitChange, onValueChange]);
+  }, [socketId, handleLocalOp, emitChange, onValueChange, canEdit]);
 
   // ----------------------------------------------------------------
   // Apply a remote operation to Monaco using stored monaco ref.
@@ -276,6 +283,8 @@ export default function Editor({
           cursorBlinking:       'smooth',
           smoothScrolling:      true,
           renderLineHighlight:  'all',
+          readOnly:             !canEdit,
+          readOnlyMessage:      { value: 'Reconnecting. Editing will resume when you are back online.' },
         }}
       />
       {/* remoteCursors passed as prop -- no window globals */}

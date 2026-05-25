@@ -8,14 +8,12 @@
  *  GET  /api/rooms/recent          -- list recent saved sessions
  *  GET  /api/rooms/:roomId         -- get a single saved session
  *  POST /api/rooms/:roomId/save    -- explicitly save a session (protected)
- *  POST /api/rooms/execute         -- execute code via Piston API
+ *  POST /api/rooms/execute         -- execute code via Paiza.IO API
  *
- * Code Execution -- Piston API:
- *  https://github.com/engineer-man/piston
- *  Free public instance: https://emkc.org/api/v2/piston/execute
+ * Code Execution -- Paiza.IO API:
+ *  https://paiza.io/projects/api
  *  No API key required. Requires internet access.
- *  For offline use, self-host via Docker (see docker-compose.yml).
- *  Override with PISTON_URL in .env to point to a self-hosted instance.
+ *  Override PAIZA_URL_CREATE / PAIZA_URL_GET in .env if needed.
  *
  * Dependencies:
  *  npm install axios   <-- required, make sure it is in package.json
@@ -23,6 +21,7 @@
 
 const express = require('express');
 const axios   = require('axios');
+const rateLimit = require('express-rate-limit');
 
 const Session         = require('../models/Session');
 const { verifyToken } = require('./auth');
@@ -30,11 +29,20 @@ const { verifyToken } = require('./auth');
 const router = express.Router();
 
 // ----------------------------------------------------------------
-// Piston config
+// Paiza config
 // ----------------------------------------------------------------
 
-const PAIZA_URL_CREATE = 'https://api.paiza.io/runners/create';
-const PAIZA_URL_GET = 'https://api.paiza.io/runners/get_details';
+const PAIZA_URL_CREATE = process.env.PAIZA_URL_CREATE || 'https://api.paiza.io/runners/create';
+const PAIZA_URL_GET = process.env.PAIZA_URL_GET || 'https://api.paiza.io/runners/get_details';
+const MAX_CODE_LENGTH = parseInt(process.env.MAX_CODE_LENGTH, 10) || 100_000;
+
+const executeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: parseInt(process.env.EXECUTE_RATE_LIMIT, 10) || 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many code executions, please try again later.' },
+});
 
 // Paiza language names.
 // Keep in sync with Session.js enum and Toolbar.jsx language list.
@@ -70,12 +78,18 @@ router.get('/recent', async (req, res, next) => {
 // Execute code via Paiza.IO API -- asynchronous, polling needed.
 // ----------------------------------------------------------------
 
-router.post('/execute', async (req, res, next) => {
+router.post('/execute', executeLimiter, async (req, res, next) => {
   try {
     const { code, language } = req.body;
 
-    if (!code || !language) {
+    if (typeof code !== 'string' || !language) {
       return res.status(400).json({ error: 'code and language are required' });
+    }
+    if (code.length === 0) {
+      return res.status(400).json({ error: 'code cannot be empty' });
+    }
+    if (code.length > MAX_CODE_LENGTH) {
+      return res.status(413).json({ error: `code must be ${MAX_CODE_LENGTH} characters or fewer` });
     }
 
     const paizaLang = PAIZA_LANGUAGES[language];
@@ -198,23 +212,5 @@ router.post('/:roomId/save', verifyToken, async (req, res, next) => {
     next(err);
   }
 });
-
-// ----------------------------------------------------------------
-// Helper -- filename per language
-// Java requires filename to match the public class name (Main.java).
-// ----------------------------------------------------------------
-
-function getFileName(language) {
-  const map = {
-    javascript: 'main.js',
-    typescript: 'main.ts',
-    python:     'main.py',
-    cpp:        'main.cpp',
-    java:       'Main.java',
-    go:         'main.go',
-    rust:       'main.rs',
-  };
-  return map[language] || 'main.txt';
-}
 
 module.exports = router;

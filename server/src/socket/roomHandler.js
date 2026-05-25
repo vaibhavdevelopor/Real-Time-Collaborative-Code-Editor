@@ -32,6 +32,16 @@ const USER_COLORS = [
   '#14B8A6', // teal
 ];
 
+const SUPPORTED_LANGUAGES = new Set([
+  'javascript',
+  'typescript',
+  'python',
+  'cpp',
+  'java',
+  'go',
+  'rust',
+]);
+
 /**
  * Assign a colour that is not currently used by anyone in the room.
  * Falls back to cycling if all 8 colours are taken (>8 users).
@@ -110,7 +120,7 @@ module.exports = function roomHandler(io, socket, redisClient) {
 
       roomUsers.set(socket.id, { userId, username, color, socketId: socket.id });
 
-      const { getRoomDoc } = require('./editorHandler');
+      const { getRoomDoc, getRevision } = require('./editorHandler');
       let doc = getRoomDoc(roomId);
       if (doc === undefined) {
         doc = (await redisClient.get(`room:${roomId}:doc`)) || '';
@@ -123,6 +133,7 @@ module.exports = function roomHandler(io, socket, redisClient) {
         language: language || 'javascript',
         users:    getRoomUsers(roomId),
         color,
+        revision: getRevision(roomId),
       });
 
       // Notify everyone else only on the first join from this socket.
@@ -145,7 +156,7 @@ module.exports = function roomHandler(io, socket, redisClient) {
   });
 
   // -- leave-room ------------------------------------------------
-  socket.on('leave-room', ({ roomId }) => {
+  socket.on('leave-room', async ({ roomId }) => {
     if (!roomId) return;
 
     const roomUsers = presence.get(roomId);
@@ -166,17 +177,38 @@ module.exports = function roomHandler(io, socket, redisClient) {
       });
       console.log(`[Room] ${userInfo.username} left room ${roomId}`);
     }
+
+    if (!presence.has(roomId)) {
+      const { clearRoomState } = require('./editorHandler');
+      try {
+        await clearRoomState(redisClient, roomId);
+      } catch (err) {
+        console.error('[roomHandler] room cleanup error:', err);
+      }
+    }
   });
 
   // -- language-change -------------------------------------------
-  socket.on('language-change', async ({ roomId, language }) => {
+  socket.on('language-change', async ({ roomId, language, code }) => {
     if (!roomId || !language) return;
+    if (!socket.rooms.has(roomId)) return;
+    if (!SUPPORTED_LANGUAGES.has(language)) {
+      socket.emit('room-error', { message: `Unsupported language: ${language}` });
+      return;
+    }
+    if (typeof code !== 'string') {
+      socket.emit('room-error', { message: 'code is required when changing language' });
+      return;
+    }
 
     try {
+      const { replaceRoomDocument } = require('./editorHandler');
+      const revision = await replaceRoomDocument(redisClient, roomId, code);
       await redisClient.set(`room:${roomId}:language`, language);
-      socket.to(roomId).emit('language-change', { language });
+      io.to(roomId).emit('language-change', { language, code, revision });
     } catch (err) {
       console.error('[roomHandler] language-change error:', err);
+      socket.emit('room-error', { message: 'Failed to change language' });
     }
   });
 
@@ -211,6 +243,13 @@ module.exports = function roomHandler(io, socket, redisClient) {
         users:    getRoomUsers(roomId),
       });
       console.log(`[Room] ${userInfo.username} disconnected from room ${roomId}`);
+
+      if (!presence.has(roomId)) {
+        const { clearRoomState } = require('./editorHandler');
+        clearRoomState(redisClient, roomId).catch(err => {
+          console.error('[roomHandler] room cleanup error:', err);
+        });
+      }
     }
   });
 

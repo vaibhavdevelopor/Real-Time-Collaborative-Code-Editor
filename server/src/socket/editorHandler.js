@@ -93,6 +93,30 @@ function appendToLog(roomId, op) {
   if (log.length > MAX_OP_LOG) log.splice(0, log.length - MAX_OP_LOG);
 }
 
+function getEarliestTransformableRevision(roomId) {
+  const log = getOpLog(roomId);
+  return log.length > 0 ? log[0].revision - 1 : getRevision(roomId);
+}
+
+async function getCurrentDoc(redisClient, roomId) {
+  if (!roomDocs.has(roomId)) {
+    const fetched = (await redisClient.get(`room:${roomId}:doc`)) || '';
+    roomDocs.set(roomId, fetched);
+  }
+  return roomDocs.get(roomId);
+}
+
+async function emitFullResync(socket, redisClient, roomId, message) {
+  const doc = await getCurrentDoc(redisClient, roomId);
+  const language = await redisClient.get(`room:${roomId}:language`);
+  socket.emit('init-document', {
+    doc,
+    language: language || 'javascript',
+    revision: getRevision(roomId),
+    message,
+  });
+}
+
 /**
  * Check that the socket has actually joined the given room.
  * Prevents a socket from pushing ops into rooms it never joined.
@@ -121,6 +145,16 @@ module.exports = function editorHandler(io, socket, redisClient) {
       const log       = getOpLog(roomId);
       const clientRev = operation.clientRevision ?? 0;
 
+      if (clientRev < getEarliestTransformableRevision(roomId)) {
+        await emitFullResync(
+          socket,
+          redisClient,
+          roomId,
+          'Client revision is too old; document was resynced.'
+        );
+        return;
+      }
+
       // 1. Find concurrent ops -- those the client had NOT seen yet
       // Exclude ops from the same user (socket), because the client's local state
       // already incorporated them sequentially before generating this op.
@@ -137,11 +171,7 @@ module.exports = function editorHandler(io, socket, redisClient) {
 
       if (transformed) {
         // 3. Fetch current doc (from memory or Redis) and apply
-        if (!roomDocs.has(roomId)) {
-          const fetched = (await redisClient.get(`room:${roomId}:doc`)) || '';
-          roomDocs.set(roomId, fetched);
-        }
-        const currentDoc = roomDocs.get(roomId);
+        const currentDoc = await getCurrentDoc(redisClient, roomId);
         const newDoc     = applyOperation(currentDoc, transformed);
         
         roomDocs.set(roomId, newDoc);
@@ -200,11 +230,7 @@ module.exports = function editorHandler(io, socket, redisClient) {
     if (!isInRoom(socket, roomId)) return;
 
     try {
-      if (!roomDocs.has(roomId)) {
-        const fetchedDoc = (await redisClient.get(`room:${roomId}:doc`)) || '';
-        roomDocs.set(roomId, fetchedDoc);
-      }
-      const doc = roomDocs.get(roomId);
+      const doc = await getCurrentDoc(redisClient, roomId);
       const language = await redisClient.get(`room:${roomId}:language`);
 
       socket.emit('init-document', {
@@ -224,7 +250,9 @@ module.exports = function editorHandler(io, socket, redisClient) {
     if (!isInRoom(socket, roomId)) return;
 
     try {
-      const doc     = (await redisClient.get(`room:${roomId}:doc`)) || '';
+      const doc     = roomDocs.has(roomId)
+        ? roomDocs.get(roomId)
+        : ((await redisClient.get(`room:${roomId}:doc`)) || '');
       const Session = require('../models/Session');
 
       await Session.upsertSession({
@@ -238,6 +266,7 @@ module.exports = function editorHandler(io, socket, redisClient) {
       console.log(`[Editor] Session saved for room ${roomId}`);
     } catch (err) {
       console.error('[editorHandler] save-session error:', err);
+      socket.emit('save-error', { message: 'Failed to save session' });
       socket.emit('editor-error', { message: 'Failed to save session' });
     }
   });
@@ -246,4 +275,31 @@ module.exports = function editorHandler(io, socket, redisClient) {
 
 module.exports.getRoomDoc = function(roomId) {
   return roomDocs.get(roomId);
+};
+
+module.exports.getRevision = getRevision;
+
+module.exports.replaceRoomDocument = function(redisClient, roomId, doc) {
+  return enqueue(roomId, async () => {
+    const revision = nextRevision(roomId);
+    roomDocs.set(roomId, doc);
+    opLogs.set(roomId, []);
+    await redisClient.set(`room:${roomId}:doc`, doc);
+    return revision;
+  });
+};
+
+module.exports.clearRoomState = async function(redisClient, roomId) {
+  if (roomDocs.has(roomId)) {
+    await redisClient.set(`room:${roomId}:doc`, roomDocs.get(roomId));
+  }
+
+  const timer = saveTimers.get(roomId);
+  if (timer) clearTimeout(timer);
+
+  opLogs.delete(roomId);
+  revisions.delete(roomId);
+  roomDocs.delete(roomId);
+  roomQueues.delete(roomId);
+  saveTimers.delete(roomId);
 };

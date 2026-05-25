@@ -37,6 +37,8 @@ export function useSocket({
   onChatMessage,
   onLanguageChange,
   onOpAck,
+  onSessionSaved,
+  onSaveError,
   onError,
 }) {
   const socketRef = useRef(null);
@@ -56,6 +58,8 @@ export function useSocket({
       onChatMessage,
       onLanguageChange,
       onOpAck,
+      onSessionSaved,
+      onSaveError,
       onError,
     };
   });
@@ -105,10 +109,8 @@ export function useSocket({
     });
 
     // -- Room events ------------------------------------------
-    socket.on('init-document', ({ doc, language, users, color, revision }) => {
-      // revision may be undefined on first join (roomHandler does not send it).
-      // editorHandler's request-document response does include it.
-      // Default to 0 -- useOT treats this as "start fresh".
+    socket.on('init-document', ({ doc, language, users, color, revision, message }) => {
+      if (message) cbRef.current.onError?.(message);
       cbRef.current.onInitDocument?.(doc, language, users, color, revision ?? 0);
     });
 
@@ -120,8 +122,8 @@ export function useSocket({
       cbRef.current.onUserLeft?.(userId, socketId, users);
     });
 
-    socket.on('language-change', ({ language }) => {
-      cbRef.current.onLanguageChange?.(language);
+    socket.on('language-change', ({ language, code, revision }) => {
+      cbRef.current.onLanguageChange?.(language, code, revision);
     });
 
     // -- Chat events ------------------------------------------
@@ -131,7 +133,11 @@ export function useSocket({
 
     // -- Save events ------------------------------------------
     socket.on('session-saved', ({ roomId, timestamp }) => {
-      console.log(`[Socket] Session saved for room ${roomId} at ${timestamp}`);
+      cbRef.current.onSessionSaved?.(roomId, timestamp);
+    });
+
+    socket.on('save-error', ({ message }) => {
+      cbRef.current.onSaveError?.(message);
     });
 
     // -- Error events -----------------------------------------
@@ -171,8 +177,8 @@ export function useSocket({
     socketRef.current?.emit('save-session', { roomId, language });
   }, [roomId]);
 
-  const emitLanguage = useCallback((language) => {
-    socketRef.current?.emit('language-change', { roomId, language });
+  const emitLanguage = useCallback((language, code) => {
+    socketRef.current?.emit('language-change', { roomId, language, code });
   }, [roomId]);
 
   return {

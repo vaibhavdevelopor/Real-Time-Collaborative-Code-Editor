@@ -81,7 +81,7 @@ app.use(cors({
 }));
 
 // Parse JSON bodies
-app.use(express.json());
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '200kb' }));
 
 // Rate limiting -- 100 requests per 15 minutes per IP on all /api routes
 const apiLimiter = rateLimit({
@@ -181,6 +181,8 @@ process.on('SIGTERM', async () => {
   });
 });
 
-bootstrap();
+if (require.main === module) {
+  bootstrap();
+}
 
-module.exports = { app, server, io }; // exported for testing
+module.exports = { app, server, io, bootstrap }; // exported for testing

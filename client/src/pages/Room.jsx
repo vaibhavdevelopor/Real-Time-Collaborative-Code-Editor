@@ -41,6 +41,7 @@ import Toolbar     from '../components/Toolbar';
 import Editor      from '../components/Editor';
 import Chat        from '../components/Chat';
 import Output      from '../components/Output';
+import { STARTER_CODE } from '../components/Editor';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5001';
 
@@ -63,12 +64,14 @@ export default function Room() {
   const [users,       setUsers]       = useState([]);
   const [messages,    setMessages]    = useState([]);
   const [initialDoc,  setInitialDoc]  = useState('');
+  const [documentRevision, setDocumentRevision] = useState(0);
   const externalOpQueue = useRef([]);
   const [output,      setOutput]      = useState(null);
   const [running,     setRunning]     = useState(false);
   const [showOutput,  setShowOutput]  = useState(false);
   const [opTick,      setOpTick]      = useState(0);
   const [error,       setError]       = useState(null);
+  const [saveStatus,  setSaveStatus]  = useState('idle');
 
   // Ref to get current editor value for Run
   // Editor.jsx updates this on every change
@@ -80,6 +83,7 @@ export default function Room() {
 
   // Ref for error toast timeout cleanup
   const errorTimerRef = useRef(null);
+  const saveTimerRef = useRef(null);
 
   // Remote cursors: Map<socketId, {userId, username, color, position}>
   // useRef so cursor updates don't trigger full re-renders
@@ -99,6 +103,7 @@ export default function Room() {
 
   const onInitDocument = useCallback((doc, lang, users, color, revision) => {
     setInitialDoc(doc);
+    setDocumentRevision(revision ?? 0);
     setLanguage(lang);
     setUsers(users || []);
     resetRevision(revision);
@@ -145,16 +150,33 @@ export default function Room() {
 
   const [resetSignal, setResetSignal] = useState(0);
 
-  const onLanguageChange = useCallback((lang) => {
+  const onLanguageChange = useCallback((lang, code, revision) => {
+    const nextCode = typeof code === 'string' ? code : (STARTER_CODE[lang] || '');
     setLanguage(lang);
-    setResetSignal(c => c + 1);
-  }, []);
+    setInitialDoc(nextCode);
+    setDocumentRevision(revision ?? Date.now());
+    editorValueRef.current = nextCode;
+    resetRevision(revision ?? 0);
+  }, [resetRevision]);
 
   const onError = useCallback((message) => {
     setError(message);
     clearTimeout(errorTimerRef.current);
     errorTimerRef.current = setTimeout(() => setError(null), 4000);
   }, []);
+
+  const onSessionSaved = useCallback(() => {
+    setSaveStatus('saved');
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+  }, []);
+
+  const onSaveError = useCallback((message) => {
+    setSaveStatus('error');
+    onError(message || 'Failed to save session');
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2500);
+  }, [onError]);
 
   // ── Socket hook ───────────────────────────────────────────────
   const {
@@ -177,15 +199,22 @@ export default function Room() {
     onChatMessage,
     onLanguageChange,
     onOpAck,
+    onSessionSaved,
+    onSaveError,
     onError,
   });
 
   // ── Handle language change ────────────────────────────────────
   const handleLanguageChange = useCallback((lang) => {
+    const nextCode = STARTER_CODE[lang] || '';
     setLanguage(lang);
+    setInitialDoc(nextCode);
+    setDocumentRevision(Date.now());
+    editorValueRef.current = nextCode;
+    resetRevision(0);
     setResetSignal(c => c + 1);
-    emitLanguage(lang);
-  }, [emitLanguage]);
+    emitLanguage(lang, nextCode);
+  }, [emitLanguage, resetRevision]);
 
   // ── Handle Run ────────────────────────────────────────────────
   const handleRun = useCallback(async () => {
@@ -229,8 +258,13 @@ export default function Room() {
 
   // ── Handle Save ───────────────────────────────────────────────
   const handleSave = useCallback(() => {
+    if (!connected) {
+      onSaveError('Cannot save while disconnected');
+      return;
+    }
+    setSaveStatus('saving');
     emitSave(language);
-  }, [emitSave, language]);
+  }, [connected, emitSave, language, onSaveError]);
 
   // ── Clear externalOp after Editor handles it ──────────────────
   // (no-op now -- Editor drains the queue directly)
@@ -238,7 +272,10 @@ export default function Room() {
 
   // Cleanup error timer on unmount
   useEffect(() => {
-    return () => clearTimeout(errorTimerRef.current);
+    return () => {
+      clearTimeout(errorTimerRef.current);
+      clearTimeout(saveTimerRef.current);
+    };
   }, []);
 
   // ── Redirect if no username set ───────────────────────────────
@@ -281,6 +318,7 @@ export default function Room() {
         users={users}
         connected={connected}
         running={running}
+        saveStatus={saveStatus}
       />
 
       {/* Main area */}
@@ -303,7 +341,9 @@ export default function Room() {
                     opTick={opTick}
                     onExternalApplied={handleExternalApplied}
                     initialDoc={initialDoc}
+                    documentRevision={documentRevision}
                     resetSignal={resetSignal}
+                    canEdit={connected}
                     onValueChange={(val) => { editorValueRef.current = val; }}
                   />
                 </div>

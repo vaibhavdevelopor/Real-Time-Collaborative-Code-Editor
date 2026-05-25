@@ -18,11 +18,12 @@
  *  users         array     -- [{userId, username, color}]
  *  connected     boolean   -- socket connection status
  *  running       boolean   -- true while code is executing
+ *  saveStatus    string    -- idle | saving | saved | error
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 
-// Keep in sync with Session.js enum and rooms.js PISTON_LANGUAGES
+// Keep in sync with Session.js enum and rooms.js PAIZA_LANGUAGES
 const LANGUAGES = [
   { value: 'javascript', label: 'JavaScript' },
   { value: 'typescript', label: 'TypeScript' },
@@ -42,17 +43,15 @@ export default function Toolbar({
   users      = [],
   connected  = false,
   running    = false,
+  saveStatus = 'idle',
 }) {
   const [copied, setCopied] = useState(false);
-  const [saved,  setSaved]  = useState(false);
   const copiedTimer = useRef(null);
-  const savedTimer  = useRef(null);
 
   // Clear timers on unmount to avoid setState on unmounted component
   useEffect(() => {
     return () => {
       clearTimeout(copiedTimer.current);
-      clearTimeout(savedTimer.current);
     };
   }, []);
 
@@ -73,10 +72,12 @@ export default function Toolbar({
   // -- Save with feedback ----------------------------------------
   const handleSave = useCallback(() => {
     onSave?.();
-    setSaved(true);
-    clearTimeout(savedTimer.current);
-    savedTimer.current = setTimeout(() => setSaved(false), 2000);
   }, [onSave]);
+
+  const saveLabel = saveStatus === 'saving' ? 'Saving...'
+    : saveStatus === 'saved' ? 'Saved'
+    : saveStatus === 'error' ? 'Save failed'
+    : 'Save';
 
   return (
     <div style={styles.toolbar}>
@@ -161,10 +162,11 @@ export default function Toolbar({
         {/* Save */}
         <button
           onClick={handleSave}
+          disabled={saveStatus === 'saving'}
           style={{ ...styles.btn, ...styles.btnGhost }}
           title="Save session"
         >
-          {saved ? '✓ Saved' : '↓ Save'}
+          {saveLabel}
         </button>
 
         {/* Run */}
