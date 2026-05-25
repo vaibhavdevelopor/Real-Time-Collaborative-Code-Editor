@@ -139,6 +139,10 @@ module.exports = function editorHandler(io, socket, redisClient) {
     if (!['insert', 'delete'].includes(operation.type)) return;
     if (typeof operation.position !== 'number') return;
     if (operation.type === 'insert' && typeof operation.char !== 'string') return;
+    if (operation.type === 'delete' && operation.length != null) {
+      if (!Number.isFinite(operation.length) || operation.length < 1) return;
+      operation.length = Math.floor(operation.length);
+    }
 
     // Enqueue so ops for the same room never interleave
     enqueue(roomId, async () => {

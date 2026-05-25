@@ -1,51 +1,40 @@
 /**
- * transform.js — Operational Transformation Algorithm
+ * transform.js -- Operational Transformation algorithm.
  *
- * Every keystroke is an "operation":
- *   { type: 'insert', position: 5, char: 'X', userId: 'abc' }
- *   { type: 'delete', position: 5, userId: 'abc' }
+ * Operations:
+ *   { type: 'insert', position: 5, char: 'text', userId: 'abc' }
+ *   { type: 'delete', position: 5, length: 3, userId: 'abc' }
  *
- * When two users type at the same time, their operations are "concurrent".
- * This function takes op1 and op2 (concurrent ops) and returns op1 adjusted
- * so it can be safely applied AFTER op2 without corrupting the document.
+ * Delete length defaults to 1 for backwards compatibility.
  */
 
-/**
- * Clamp a position so it never goes below 0.
- * Upper-bound clamping happens in applyOperation where we have the actual doc.
- */
 function clampMin(position) {
   return Math.max(0, position);
 }
 
-/**
- * Derive a stable tiebreaker string from an operation.
- * Falls back to '\x00' (lowest possible string) if userId is missing,
- * so ordering is always consistent even with anonymous users.
- */
 function tiebreakerOf(op) {
   return (op.userId != null && op.userId !== '') ? String(op.userId) : '\x00';
 }
 
-/**
- * Transform op1 against op2.
- * @param {Object} op1 - The operation to transform
- * @param {Object} op2 - The operation to transform against
- * @returns {Object|null} - Transformed op1, or null if it becomes a no-op
- */
+function insertLength(op) {
+  return typeof op.char === 'string' ? op.char.length : 0;
+}
+
+function deleteLength(op) {
+  return Math.max(1, Number.isFinite(op.length) ? Math.floor(op.length) : 1);
+}
+
 function transform(op1, op2) {
   if (!op1 || !op2) return op1;
 
-  // ── Case 1: both inserts ──────────────────────────────────────
   if (op1.type === 'insert' && op2.type === 'insert') {
     if (op2.position < op1.position) {
-      return { ...op1, position: clampMin(op1.position + op2.char.length) };
+      return { ...op1, position: clampMin(op1.position + insertLength(op2)) };
     }
 
     if (op2.position === op1.position) {
-      // Stable tiebreaker — never depends on raw userId being present
       if (tiebreakerOf(op2) > tiebreakerOf(op1)) {
-        return { ...op1, position: clampMin(op1.position + op2.char.length) };
+        return { ...op1, position: clampMin(op1.position + insertLength(op2)) };
       }
       return op1;
     }
@@ -53,61 +42,66 @@ function transform(op1, op2) {
     return op1;
   }
 
-  // ── Case 2: insert then delete ───────────────────────────────
   if (op1.type === 'insert' && op2.type === 'delete') {
-    if (op2.position < op1.position) {
-      return { ...op1, position: clampMin(op1.position - 1) };
-    }
-    return op1;
-  }
+    const start2 = op2.position;
+    const end2 = op2.position + deleteLength(op2);
 
-  // ── Case 3: delete then insert ───────────────────────────────
-  if (op1.type === 'delete' && op2.type === 'insert') {
-    if (op2.position <= op1.position) {
-      return { ...op1, position: clampMin(op1.position + op2.char.length) };
-    }
-    return op1;
-  }
-
-  // ── Case 4: both deletes ─────────────────────────────────────
-  if (op1.type === 'delete' && op2.type === 'delete') {
-    if (op2.position < op1.position) {
-      return { ...op1, position: clampMin(op1.position - 1) };
-    }
-    if (op2.position === op1.position) {
-      // Character already deleted by op2 — op1 becomes a no-op
+    if (deleteLength(op2) > 1 && op1.position > start2 && op1.position < end2) {
       return null;
     }
+
+    if (op2.position < op1.position) {
+      const removedBefore = Math.max(
+        0,
+        Math.min(op1.position, op2.position + deleteLength(op2)) - op2.position
+      );
+      return { ...op1, position: clampMin(op1.position - removedBefore) };
+    }
     return op1;
+  }
+
+  if (op1.type === 'delete' && op2.type === 'insert') {
+    const start1 = op1.position;
+    const end1 = op1.position + deleteLength(op1);
+
+    if (op2.position <= op1.position) {
+      return { ...op1, position: clampMin(op1.position + insertLength(op2)) };
+    }
+    if (op2.position > start1 && op2.position < end1) {
+      return { ...op1, length: deleteLength(op1) + insertLength(op2) };
+    }
+    return op1;
+  }
+
+  if (op1.type === 'delete' && op2.type === 'delete') {
+    const start1 = op1.position;
+    const end1 = op1.position + deleteLength(op1);
+    const start2 = op2.position;
+    const end2 = op2.position + deleteLength(op2);
+    const removedBefore = Math.max(0, Math.min(start1, end2) - start2);
+    const overlap = Math.max(0, Math.min(end1, end2) - Math.max(start1, start2));
+    const nextLength = deleteLength(op1) - overlap;
+
+    if (nextLength <= 0) return null;
+
+    return { ...op1, position: clampMin(start1 - removedBefore), length: nextLength };
   }
 
   return op1;
 }
 
-/**
- * Apply an operation to a string document.
- * Includes full bounds validation — silently ignores out-of-range ops
- * rather than corrupting the document.
- *
- * @param {string} doc - Current document text
- * @param {Object} op  - Operation to apply
- * @returns {string}   - Updated document text
- */
 function applyOperation(doc, op) {
   if (!op) return doc;
 
   if (op.type === 'insert') {
-    // Clamp to [0, doc.length] — inserting beyond end just appends
     const pos = Math.max(0, Math.min(op.position, doc.length));
-    // Guard: char must be a non-empty string
     if (typeof op.char !== 'string' || op.char.length === 0) return doc;
     return doc.slice(0, pos) + op.char + doc.slice(pos);
   }
 
   if (op.type === 'delete') {
-    // Strictly out of bounds — ignore silently
     if (op.position < 0 || op.position >= doc.length) return doc;
-    return doc.slice(0, op.position) + doc.slice(op.position + 1);
+    return doc.slice(0, op.position) + doc.slice(op.position + deleteLength(op));
   }
 
   return doc;

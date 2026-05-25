@@ -15,7 +15,7 @@ const { transform, applyOperation } = require('./transform');
 // ----------------------------------------------------------------
 
 const ins = (position, char, userId = 'user-A') => ({ type: 'insert', position, char, userId });
-const del = (position, userId = 'user-A')       => ({ type: 'delete', position, userId });
+const del = (position, userId = 'user-A', length = 1) => ({ type: 'delete', position, userId, length });
 
 /**
  * The gold-standard convergence check.
@@ -228,6 +228,14 @@ describe('applyOperation -- bounds validation', () => {
   test('insert on empty document', () => {
     expect(applyOperation('', ins(0, 'A'))).toBe('A');
   });
+
+  test('ranged delete removes a full selection in one operation', () => {
+    expect(applyOperation('hello world', del(0, 'user-A', 11))).toBe('');
+  });
+
+  test('ranged delete clamps naturally at document end', () => {
+    expect(applyOperation('hello', del(2, 'user-A', 999))).toBe('he');
+  });
 });
 
 // ----------------------------------------------------------------
@@ -272,6 +280,10 @@ describe('real-world scenarios', () => {
 
   test('one user types while another deletes -- both paths converge', () => {
     checkConvergence('abcde', del(2, 'user-A'), ins(4, 'X', 'user-B'));
+  });
+
+  test('select-all delete is a single operation and can coexist with remote insert', () => {
+    checkConvergence('abcdef', del(0, 'user-A', 6), ins(3, 'X', 'user-B'));
   });
 
   test('chain of 3 concurrent inserts -- all 6 orderings converge', () => {

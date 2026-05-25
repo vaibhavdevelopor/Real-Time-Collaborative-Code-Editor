@@ -157,9 +157,14 @@ export default function Editor({
     for (const change of changeEvent.changes) {
       const { rangeOffset, rangeLength, text } = change;
 
-      // Emit delete ops for replaced/deleted characters
-      for (let i = 0; i < rangeLength; i++) {
-        const op = { type: 'delete', position: rangeOffset, userId: socketId };
+      // Emit one ranged delete for selection deletes/replacements.
+      if (rangeLength > 0) {
+        const op = {
+          type:     'delete',
+          position: rangeOffset,
+          length:   rangeLength,
+          userId:   socketId,
+        };
         const clientRevision = handleLocalOp(op);
         emitChange?.(op, clientRevision);
       }
@@ -207,7 +212,8 @@ export default function Editor({
 
       if (op.type === 'delete') {
         const startPos = model.getPositionAt(op.position);
-        const endPos   = model.getPositionAt(op.position + 1);
+        const deleteLength = Math.max(1, Number.isFinite(op.length) ? Math.floor(op.length) : 1);
+        const endPos   = model.getPositionAt(op.position + deleteLength);
         model.applyEdits([{
           range: {
             startLineNumber: startPos.lineNumber,
