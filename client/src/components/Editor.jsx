@@ -51,6 +51,7 @@ export default function Editor({
   language          = 'javascript',
   socketId,
   remoteCursors     = new Map(), // passed as prop from Room.jsx -- no window globals
+  cursorTick        = 0,
   emitChange,
   emitCursor,
   handleLocalOp,
@@ -298,6 +299,7 @@ export default function Editor({
         editorRef={editorRef}
         monacoRef={monacoRef}
         cursors={remoteCursors}
+        cursorTick={cursorTick}
       />
     </div>
   );

@@ -332,6 +332,7 @@ export default function Room() {
                     language={language}
                     socketId={socketId}
                     remoteCursors={remoteCursorsRef.current}
+                    cursorTick={cursorTick}
                     emitChange={emitChange}
                     emitCursor={emitCursor}
                     handleLocalOp={handleLocalOp}

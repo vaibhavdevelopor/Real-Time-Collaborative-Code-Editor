@@ -81,7 +81,7 @@ function removeUserCursorStyle(socketId) {
   }
 }
 
-export default function UserCursors({ editorRef, monacoRef, cursors }) {
+export default function UserCursors({ editorRef, monacoRef, cursors, cursorTick }) {
   // Map<socketId, string[]> -- decoration ids per user
   const decorationIds = useRef(new Map());
 
@@ -147,7 +147,7 @@ export default function UserCursors({ editorRef, monacoRef, cursors }) {
       removeUserCursorStyle(socketId);
     });
 
-  }, [cursors, editorRef, monacoRef]);
+  }, [cursors, cursorTick, editorRef, monacoRef]);
 
   // Cleanup all decorations and styles on unmount
   useEffect(() => {
