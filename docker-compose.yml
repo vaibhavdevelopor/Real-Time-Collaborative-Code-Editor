@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  # ─── 1. Local High-Speed In-Memory Database (Redis) ───
+  redis:
+    image: redis:7-alpine
+    container_name: maxheap-redis
+    ports:
+      - "6379:6379"
+    restart: always
+
+  # ─── 2. Backend Node.js / Express / Socket.IO Server ───
+  server:
+    build: ./server
+    container_name: maxheap-server
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001
+      - CLIENT_URL=http://localhost:5173
+      # Use local Redis container or fall back to Upstash if configured
+      - REDIS_URL=redis://redis:6379
+      - MONGODB_URI=${MONGODB_URI}
+      - JWT_SECRET=maxheap_super_secret_jwt_key_vaibhav_2026
+    depends_on:
+      - redis
+    restart: always
+
+  # ─── 3. Frontend React / Vite Application (Nginx) ───
+  client:
+    build:
+      context: ./client
+      args:
+        - VITE_SERVER_URL=http://localhost:5001
+    container_name: maxheap-client
+    ports:
+      - "5173:80"
+    depends_on:
+      - server
+    restart: always
